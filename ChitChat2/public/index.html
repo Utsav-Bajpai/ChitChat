@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>ChitChat</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+  <!-- MOBILE OVERLAY (tap to close sidebar on mobile) -->
+  <div class="overlay" id="overlay" onclick="closeSidebar()"></div>
+
+  <div class="app" id="app">
+
+    <!-- ── SIDEBAR ── -->
+    <aside class="sidebar" id="sidebar">
+
+      <!-- Sidebar Header -->
+      <div class="sidebar-header">
+        <div class="sidebar-logo">
+          <span class="logo-mark">✦</span>
+          <span>ChitChat</span>
+        </div>
+        <div class="sidebar-header-right">
+          <div class="my-avatar" id="myAvatar" title="Your account">??</div>
+          <button class="icon-btn" id="logoutBtn" title="Logout">⏻</button>
+        </div>
+      </div>
+
+      <!-- Search -->
+      <div class="sidebar-search">
+        <span class="search-icon">⌕</span>
+        <input type="text" id="searchInput" placeholder="Search people..." />
+      </div>
+
+      <!-- Status Bar -->
+      <div class="sidebar-status" id="sidebarStatus">
+        <span class="status-dot online-dot"></span>
+        <span id="myUsername">Loading...</span>
+      </div>
+
+      <!-- User List -->
+      <div class="user-list" id="userList">
+        <div class="user-list-empty">
+          <div class="empty-icon">👥</div>
+          <p>No other users online yet.</p>
+          <p class="empty-hint">Open a second tab and register another user!</p>
+        </div>
+      </div>
+
+    </aside>
+
+    <!-- ── MAIN PANEL ── -->
+    <main class="main-panel">
+
+      <!-- WELCOME SCREEN (when no chat selected) -->
+      <div class="welcome-screen" id="welcomeScreen">
+        <div class="welcome-inner">
+          <div class="welcome-icon">✦</div>
+          <h2>ChitChat</h2>
+          <p>Select someone from the sidebar to start a private conversation.</p>
+          <div class="welcome-hint" id="welcomeHint"></div>
+        </div>
+      </div>
+
+      <!-- CHAT VIEW (shown when a chat is open) -->
+      <div class="chat-view" id="chatView" style="display:none">
+
+        <!-- Chat Header -->
+        <div class="chat-header">
+          <button class="back-btn" id="backBtn" onclick="closeSidebar()">←</button>
+          <div class="chat-header-avatar" id="chatAvatar">??</div>
+          <div class="chat-header-info">
+            <div class="chat-header-name" id="chatName">User</div>
+            <div class="chat-header-status" id="chatStatus">
+              <span class="status-dot"></span>
+              <span class="status-label">Offline</span>
+            </div>
+          </div>
+          <div class="header-actions">
+            <button class="icon-btn" title="Voice call">📞</button>
+            <button class="icon-btn" title="Video call">📹</button>
+          </div>
+        </div>
+
+        <!-- Messages Area -->
+        <div class="messages-area" id="messagesArea">
+          <div class="messages-loader" id="messagesLoader">Loading messages...</div>
+        </div>
+
+        <!-- Typing Indicator -->
+        <div class="typing-indicator" id="typingIndicator" style="display:none">
+          <span id="typingName">User</span> is typing
+          <span class="typing-dots">
+            <span></span><span></span><span></span>
+          </span>
+        </div>
+
+        <!-- Input Bar -->
+        <div class="input-bar">
+          <button class="icon-btn emoji-btn" title="Emoji">😊</button>
+          <input
+            type="text"
+            id="msgInput"
+            placeholder="Type a message..."
+            autocomplete="off"
+            maxlength="1000"
+          />
+          <button class="send-btn" id="sendBtn">
+            <span>➤</span>
+          </button>
+        </div>
+
+      </div>
+
+    </main>
+
+  </div>
+
+  <!-- Mobile FAB (hamburger for sidebar) -->
+  <button class="fab-menu" id="fabMenu" onclick="openSidebar()">☰</button>
+
+  <!-- Context Menu for messages -->
+  <div class="context-menu" id="contextMenu" style="display:none">
+    <button class="ctx-item" id="ctxEdit">✏️ Edit</button>
+    <button class="ctx-item ctx-delete" id="ctxDelete">🗑️ Delete</button>
+  </div>
+
+<script src="/socket.io/socket.io.js"></script>
+<script src="script.js"></script>
+</body>
+</html>

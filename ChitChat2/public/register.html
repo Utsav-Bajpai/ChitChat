@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>ChitChat — Register</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="auth.css" />
+</head>
+<body>
+
+  <div class="auth-bg">
+    <div class="auth-blob blob1"></div>
+    <div class="auth-blob blob2"></div>
+    <div class="auth-blob blob3"></div>
+  </div>
+
+  <div class="auth-wrapper">
+    <div class="auth-card">
+
+      <!-- Logo -->
+      <div class="auth-logo">
+        <div class="logo-icon">✦</div>
+        <span class="logo-text">ChitChat</span>
+      </div>
+
+      <h1 class="auth-title">Create account</h1>
+      <p class="auth-sub">Join ChitChat and start messaging</p>
+
+      <!-- Error / Success Banner -->
+      <div class="error-banner" id="errorBanner" style="display:none"></div>
+      <div class="success-banner" id="successBanner" style="display:none"></div>
+
+      <!-- Form -->
+      <div class="auth-form">
+
+        <div class="field-group">
+          <label class="field-label">Username <span class="required">*</span></label>
+          <input type="text" id="username" class="field-input" placeholder="How should people call you?" autocomplete="off"/>
+        </div>
+
+        <div class="field-row">
+          <div class="field-group">
+            <label class="field-label">Email</label>
+            <input type="email" id="email" class="field-input" placeholder="you@example.com"/>
+          </div>
+          <div class="field-group">
+            <label class="field-label">Phone</label>
+            <input type="tel" id="phone" class="field-input" placeholder="+91 98765..."/>
+          </div>
+        </div>
+        <p class="field-note">Provide at least one: email or phone</p>
+
+        <div class="field-group">
+          <label class="field-label">Password <span class="required">*</span></label>
+          <div class="input-with-toggle">
+            <input type="password" id="password" class="field-input" placeholder="Min 6 characters" autocomplete="new-password"/>
+            <button class="toggle-pw" id="togglePw" type="button">👁</button>
+          </div>
+          <div class="password-strength" id="pwStrength"></div>
+        </div>
+
+        <button class="auth-btn" id="registerBtn">
+          <span class="btn-text">Create Account</span>
+          <span class="btn-loader" style="display:none">●●●</span>
+        </button>
+      </div>
+
+      <p class="auth-switch">Already have an account? <a href="login.html">Sign in →</a></p>
+
+    </div>
+  </div>
+
+  <script>
+    const session = JSON.parse(localStorage.getItem("chitchat_session") || "null");
+    if (session) window.location.href = "index.html";
+
+    const registerBtn = document.getElementById("registerBtn");
+    const errorBanner = document.getElementById("errorBanner");
+    const successBanner = document.getElementById("successBanner");
+    const togglePw = document.getElementById("togglePw");
+    const pwInput = document.getElementById("password");
+    const pwStrength = document.getElementById("pwStrength");
+
+    togglePw.addEventListener("click", () => {
+      pwInput.type = pwInput.type === "password" ? "text" : "password";
+      togglePw.textContent = pwInput.type === "password" ? "👁" : "🙈";
+    });
+
+    pwInput.addEventListener("input", () => {
+      const val = pwInput.value;
+      let strength = 0;
+      if (val.length >= 6) strength++;
+      if (/[A-Z]/.test(val)) strength++;
+      if (/[0-9]/.test(val)) strength++;
+      if (/[^A-Za-z0-9]/.test(val)) strength++;
+
+      const labels = ["", "Weak", "Fair", "Good", "Strong"];
+      const colors = ["", "#e74c3c", "#f39c12", "#3498db", "#2ecc71"];
+      pwStrength.textContent = val ? `Strength: ${labels[strength]}` : "";
+      pwStrength.style.color = colors[strength];
+    });
+
+    function showError(msg) {
+      successBanner.style.display = "none";
+      errorBanner.textContent = msg;
+      errorBanner.style.display = "block";
+      errorBanner.classList.add("shake");
+      setTimeout(() => errorBanner.classList.remove("shake"), 500);
+    }
+
+    function showSuccess(msg) {
+      errorBanner.style.display = "none";
+      successBanner.textContent = msg;
+      successBanner.style.display = "block";
+    }
+
+    function setLoading(loading) {
+      registerBtn.querySelector(".btn-text").style.display = loading ? "none" : "inline";
+      registerBtn.querySelector(".btn-loader").style.display = loading ? "inline" : "none";
+      registerBtn.disabled = loading;
+    }
+
+    async function handleRegister() {
+      const username = document.getElementById("username").value.trim();
+      const email = document.getElementById("email").value.trim();
+      const phone = document.getElementById("phone").value.trim();
+      const password = document.getElementById("password").value;
+
+      errorBanner.style.display = "none";
+
+      if (!username) return showError("Username is required.");
+      if (!email && !phone) return showError("Please provide email or phone.");
+      if (password.length < 6) return showError("Password must be at least 6 characters.");
+
+      setLoading(true);
+
+      try {
+        const res = await fetch("/api/register", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ username, email, phone, password })
+        });
+
+        const data = await res.json();
+
+        if (!res.ok) {
+          showError(data.error || "Registration failed.");
+        } else {
+          showSuccess("Account created! Redirecting to login...");
+          setTimeout(() => window.location.href = "login.html", 1500);
+        }
+      } catch (err) {
+        showError("Server error. Is the server running?");
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    registerBtn.addEventListener("click", handleRegister);
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") handleRegister();
+    });
+  </script>
+
+</body>
+</html>

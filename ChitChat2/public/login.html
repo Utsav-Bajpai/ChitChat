@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>ChitChat — Login</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="auth.css" />
+</head>
+<body>
+
+  <div class="auth-bg">
+    <div class="auth-blob blob1"></div>
+    <div class="auth-blob blob2"></div>
+    <div class="auth-blob blob3"></div>
+  </div>
+
+  <div class="auth-wrapper">
+    <div class="auth-card">
+
+      <!-- Logo -->
+      <div class="auth-logo">
+        <div class="logo-icon">✦</div>
+        <span class="logo-text">ChitChat</span>
+      </div>
+
+      <h1 class="auth-title">Welcome back</h1>
+      <p class="auth-sub">Sign in to continue your conversations</p>
+
+      <!-- Error Banner -->
+      <div class="error-banner" id="errorBanner" style="display:none"></div>
+
+      <!-- Form -->
+      <div class="auth-form">
+        <div class="field-group">
+          <label class="field-label">Email or Phone</label>
+          <input
+            type="text"
+            id="credential"
+            class="field-input"
+            placeholder="you@example.com or +91..."
+            autocomplete="username"
+          />
+        </div>
+
+        <div class="field-group">
+          <label class="field-label">Password</label>
+          <div class="input-with-toggle">
+            <input
+              type="password"
+              id="password"
+              class="field-input"
+              placeholder="Enter password"
+              autocomplete="current-password"
+            />
+            <button class="toggle-pw" id="togglePw" type="button" aria-label="Toggle password">👁</button>
+          </div>
+        </div>
+
+        <button class="auth-btn" id="loginBtn">
+          <span class="btn-text">Sign In</span>
+          <span class="btn-loader" style="display:none">●●●</span>
+        </button>
+      </div>
+
+      <p class="auth-switch">Don't have an account? <a href="register.html">Create one →</a></p>
+
+    </div>
+  </div>
+
+  <script>
+    // Redirect if already logged in
+    const session = JSON.parse(localStorage.getItem("chitchat_session") || "null");
+    if (session) window.location.href = "index.html";
+
+    const loginBtn = document.getElementById("loginBtn");
+    const errorBanner = document.getElementById("errorBanner");
+    const togglePw = document.getElementById("togglePw");
+
+    // Toggle password visibility
+    togglePw.addEventListener("click", () => {
+      const pw = document.getElementById("password");
+      pw.type = pw.type === "password" ? "text" : "password";
+      togglePw.textContent = pw.type === "password" ? "👁" : "🙈";
+    });
+
+    function showError(msg) {
+      errorBanner.textContent = msg;
+      errorBanner.style.display = "block";
+      errorBanner.classList.add("shake");
+      setTimeout(() => errorBanner.classList.remove("shake"), 500);
+    }
+
+    function setLoading(loading) {
+      loginBtn.querySelector(".btn-text").style.display = loading ? "none" : "inline";
+      loginBtn.querySelector(".btn-loader").style.display = loading ? "inline" : "none";
+      loginBtn.disabled = loading;
+    }
+
+    async function handleLogin() {
+      const credential = document.getElementById("credential").value.trim();
+      const password = document.getElementById("password").value;
+
+      errorBanner.style.display = "none";
+      if (!credential || !password) return showError("Please fill in all fields.");
+
+      setLoading(true);
+
+      try {
+        const res = await fetch("/api/login", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ credential, password })
+        });
+
+        const data = await res.json();
+
+        if (!res.ok) {
+          showError(data.error || "Login failed.");
+        } else {
+          localStorage.setItem("chitchat_session", JSON.stringify({
+            token: data.token,
+            user: data.user
+          }));
+          window.location.href = "index.html";
+        }
+      } catch (err) {
+        showError("Server error. Is the server running?");
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    loginBtn.addEventListener("click", handleLogin);
+
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") handleLogin();
+    });
+  </script>
+
+</body>
+</html>
