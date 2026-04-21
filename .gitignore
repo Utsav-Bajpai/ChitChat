@@ -2,3 +2,4 @@ ccenv
 node_modules
 serviceAccountKey.json
 .gitignore
+firebase-config.js
