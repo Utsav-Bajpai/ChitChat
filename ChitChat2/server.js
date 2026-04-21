@@ -1,176 +1,150 @@
-
 const express = require("express");
 const http = require("http");
 const { Server } = require("socket.io");
-const { v4: uuidv4 } = require("uuid"); // npm install uuid
+const admin = require("firebase-admin");
+const serviceAccount = require("./serviceAccountKey.json"); // ← your downloaded key
 
+// ── Init Firebase Admin ──
+admin.initializeApp({
+  credential: admin.credential.cert(serviceAccount)
+});
+
+const db = admin.firestore();
 const app = express();
 const server = http.createServer(app);
-const io = new Server(server, {
-  cors: { origin: "*" }
-});
+const io = new Server(server, { cors: { origin: "*" } });
 
 app.use(express.json());
 app.use(express.static("public"));
 
+// In-memory: online presence only (ephemeral by nature)
+const onlineUsers = new Map(); // socketId → { userId, username }
 
+// ─────────────────────────────────────────────
+// HELPERS
+// ─────────────────────────────────────────────
 
-const users = new Map();        // userId → user object
-const onlineUsers = new Map();  // socketId → userId
-const messages = new Map();     // conversationId → [messages]
-
-
-/**
- Get or create a conversation ID for two users.
- Sorted to ensure A↔B and B↔A produce same key.
- */
 function getConversationId(userA, userB) {
   return [userA, userB].sort().join("_");
 }
 
-
-//  Find a user by email or phone.
-//  Replace with: User.findOne({ $or: [{ email }, { phone }] })
-
-function findUserByCredential(credential) {
-  for (const user of users.values()) {
-    if (user.email === credential || user.phone === credential) {
-      return user;
-    }
+// Middleware: verify Firebase ID token on REST calls
+async function verifyToken(req, res, next) {
+  const authHeader = req.headers.authorization;
+  if (!authHeader || !authHeader.startsWith("Bearer ")) {
+    return res.status(401).json({ error: "No token provided." });
   }
-  return null;
+  const token = authHeader.split("Bearer ")[1];
+  try {
+    const decoded = await admin.auth().verifyIdToken(token);
+    req.user = decoded;
+    next();
+  } catch {
+    return res.status(401).json({ error: "Invalid or expired token." });
+  }
 }
 
+// ─────────────────────────────────────────────
+// REST ENDPOINTS
+// ─────────────────────────────────────────────
 
-//  Get all users except the current one (for sidebar).
-//  Replace with: User.find({ _id: { $ne: userId } })
+// Called from register.html after Firebase Auth creates the user
+app.post("/api/user/save", verifyToken, async (req, res) => {
+  const { username } = req.body;
+  const { uid, email } = req.user;
 
-function getOtherUsers(currentUserId) {
-  return Array.from(users.values())
-    .filter(u => u.id !== currentUserId)
-    .map(u => ({
-      id: u.id,
-      username: u.username,
-      avatar: u.avatar,
-      online: [...onlineUsers.values()].includes(u.id)
-    }));
-}
-
-/** REGISTER */
-app.post("/api/register", (req, res) => {
-  const { username, email, phone, password } = req.body;
-
-  // Validation
-  if (!username || !password) {
-    return res.status(400).json({ error: "Username and password are required." });
-  }
-  if (!email && !phone) {
-    return res.status(400).json({ error: "Email or phone is required." });
-  }
-  if (password.length < 6) {
-    return res.status(400).json({ error: "Password must be at least 6 characters." });
-  }
-  if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-    return res.status(400).json({ error: "Invalid email format." });
+  if (!username || !username.trim()) {
+    return res.status(400).json({ error: "Username is required." });
   }
 
-  // Check duplicate
-  const credential = email || phone;
-  if (findUserByCredential(credential)) {
-    return res.status(409).json({ error: "User with this email/phone already exists." });
+  try {
+    await db.collection("users").doc(uid).set({
+      uid,
+      username: username.trim(),
+      email: email || null,
+      avatar: username.trim().slice(0, 2).toUpperCase(),
+      createdAt: admin.firestore.FieldValue.serverTimestamp()
+    }, { merge: true });
+
+    res.status(201).json({ success: true });
+  } catch (err) {
+    console.error("Save user error:", err);
+    res.status(500).json({ error: "Could not save user profile." });
   }
-
-  // Create user
-  // Replace with: new User({ ... }).save()
-  const newUser = {
-    id: uuidv4(),
-    username: username.trim(),
-    email: email || null,
-    phone: phone || null,
-    password, //Replace with: bcrypt.hash(password, 10)
-    avatar: username.trim().slice(0, 2).toUpperCase(),
-    createdAt: new Date().toISOString()
-  };
-
-  users.set(newUser.id, newUser);
-  console.log(` Registered: ${newUser.username} (${newUser.id})`);
-
-  res.status(201).json({
-    success: true,
-    user: { id: newUser.id, username: newUser.username, avatar: newUser.avatar }
-  });
 });
 
-/** LOGIN */
-app.post("/api/login", (req, res) => {
-  const { credential, password } = req.body;
+// Get all users except self (for sidebar)
+app.get("/api/users", verifyToken, async (req, res) => {
+  try {
+    const snapshot = await db.collection("users").get();
+    const users = snapshot.docs
+      .map(doc => doc.data())
+      .filter(u => u.uid !== req.user.uid)
+      .map(u => ({
+        id: u.uid,
+        username: u.username,
+        avatar: u.avatar,
+        online: [...onlineUsers.values()].some(o => o.userId === u.uid)
+      }));
 
-  if (!credential || !password) {
-    return res.status(400).json({ error: "All fields are required." });
+    res.json(users);
+  } catch (err) {
+    console.error("Get users error:", err);
+    res.status(500).json({ error: "Could not fetch users." });
   }
-
-  // Replace with: User.findOne({ $or: [{ email: credential }, { phone: credential }] })
-  const user = findUserByCredential(credential);
-
-  if (!user || user.password !== password) {
-    // Replace password check with: bcrypt.compare(password, user.password)
-    return res.status(401).json({ error: "Invalid credentials." });
-  }
-
-  // Replace with: JWT token — jwt.sign({ userId: user.id }, SECRET, { expiresIn: '7d' })
-  const sessionToken = `${user.id}_${Date.now()}`;
-
-  console.log(` Login: ${user.username}`);
-
-  res.json({
-    success: true,
-    token: sessionToken,
-    user: { id: user.id, username: user.username, avatar: user.avatar }
-  });
 });
 
-// SOCKET.IO — Real-Time Events
+// ─────────────────────────────────────────────
+// SOCKET.IO
+// ─────────────────────────────────────────────
 
 io.on("connection", (socket) => {
-  console.log(`🔌 Socket connected: ${socket.id}`);
+  console.log("🔌 Socket connected:", socket.id);
 
-  // ── USER JOINS ──
-  socket.on("user_join", ({ userId, username }) => {
-    onlineUsers.set(socket.id, userId);
+  // User joins — verify their Firebase token first
+  socket.on("user_join", async ({ userId, username, token }) => {
+    try {
+      await admin.auth().verifyIdToken(token);
+    } catch {
+      console.warn("❌ Invalid token — disconnecting socket.");
+      socket.disconnect();
+      return;
+    }
+
+    onlineUsers.set(socket.id, { userId, username });
     socket.userId = userId;
     socket.username = username;
 
-    // Notify all others this user is online
     socket.broadcast.emit("user_status_changed", { userId, online: true });
-
-    // Send the joining user a full list of all users + their status
-    const allUsers = getOtherUsers(userId);
-    socket.emit("users_list", allUsers);
-
     console.log(`👤 ${username} joined (${userId})`);
   });
 
-  // ── LOAD CONVERSATION ──
-  socket.on("load_conversation", ({ withUserId }) => {
-    const myId = socket.userId;
-    const convId = getConversationId(myId, withUserId);
+  // Load message history from Firestore
+  socket.on("load_conversation", async ({ withUserId }) => {
+    const convId = getConversationId(socket.userId, withUserId);
+    try {
+      const snapshot = await db.collection("messages")
+        .where("conversationId", "==", convId)
+        .orderBy("time", "asc")
+        .limit(100)
+        .get();
 
-    // Replace with: Message.find({ conversationId: convId }).sort({ createdAt: 1 })
-    const history = messages.get(convId) || [];
-    socket.emit("conversation_history", { withUserId, messages: history });
+      const history = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      socket.emit("conversation_history", { withUserId, messages: history });
+    } catch (err) {
+      console.error("Load conversation error:", err);
+      socket.emit("conversation_history", { withUserId, messages: [] });
+    }
   });
 
-  // SEND MESSAGE (Private 1-to-1)
-  socket.on("send_message", ({ toUserId, text }) => {
+  // Send a private message → save to Firestore
+  socket.on("send_message", async ({ toUserId, text }) => {
     if (!text || !text.trim()) return;
 
-    const fromUserId = socket.userId;
-    const convId = getConversationId(fromUserId, toUserId);
-
+    const convId = getConversationId(socket.userId, toUserId);
     const msg = {
-      id: uuidv4(),
       conversationId: convId,
-      fromUserId,
+      fromUserId: socket.userId,
       toUserId,
       senderName: socket.username,
       text: text.trim(),
@@ -178,100 +152,107 @@ io.on("connection", (socket) => {
       edited: false
     };
 
-    // Replace with: new Message(msg).save()
-    if (!messages.has(convId)) messages.set(convId, []);
-    messages.get(convId).push(msg);
+    try {
+      const ref = await db.collection("messages").add(msg);
+      const saved = { id: ref.id, ...msg };
 
-    // Send to recipient (find their socket)
-    const recipientSocketId = [...onlineUsers.entries()]
-      .find(([, uid]) => uid === toUserId)?.[0];
+      // Deliver to recipient if online
+      const recipientEntry = [...onlineUsers.entries()]
+        .find(([, u]) => u.userId === toUserId);
+      if (recipientEntry) {
+        io.to(recipientEntry[0]).emit("receive_message", saved);
+      }
 
-    if (recipientSocketId) {
-      io.to(recipientSocketId).emit("receive_message", msg);
-    }
-
-    // Echo back to sender
-    socket.emit("message_sent", msg);
-  });
-
-  // EDIT MESSAGE
-  socket.on("edit_message", ({ messageId, newText, withUserId }) => {
-    const convId = getConversationId(socket.userId, withUserId);
-    const history = messages.get(convId) || [];
-    const msgIndex = history.findIndex(m => m.id === messageId);
-
-    if (msgIndex === -1) return;
-    if (history[msgIndex].fromUserId !== socket.userId) return; // Only own messages
-
-    // Replace with: Message.findByIdAndUpdate(messageId, { text: newText, edited: true })
-    history[msgIndex].text = newText;
-    history[msgIndex].edited = true;
-    history[msgIndex].editedAt = new Date().toISOString();
-
-    const updated = history[msgIndex];
-
-    // Notify both parties
-    socket.emit("message_edited", updated);
-
-    const recipientSocketId = [...onlineUsers.entries()]
-      .find(([, uid]) => uid === withUserId)?.[0];
-    if (recipientSocketId) {
-      io.to(recipientSocketId).emit("message_edited", updated);
+      // Confirm to sender
+      socket.emit("message_sent", saved);
+    } catch (err) {
+      console.error("Send message error:", err);
     }
   });
 
-  // ── DELETE MESSAGE ──
-  socket.on("delete_message", ({ messageId, withUserId }) => {
-    const convId = getConversationId(socket.userId, withUserId);
-    const history = messages.get(convId) || [];
-    const msgIndex = history.findIndex(m => m.id === messageId);
+  // Edit a message in Firestore
+  socket.on("edit_message", async ({ messageId, newText, withUserId }) => {
+    if (!newText || !newText.trim()) return;
 
-    if (msgIndex === -1) return;
-    if (history[msgIndex].fromUserId !== socket.userId) return;
+    try {
+      const ref = db.collection("messages").doc(messageId);
+      const doc = await ref.get();
 
-    // Replace with: Message.findByIdAndDelete(messageId)
-    messages.set(convId, history.filter(m => m.id !== messageId));
+      if (!doc.exists || doc.data().fromUserId !== socket.userId) return;
 
-    // Notify both parties
-    socket.emit("message_deleted", { messageId, withUserId });
+      await ref.update({
+        text: newText.trim(),
+        edited: true,
+        editedAt: new Date().toISOString()
+      });
 
-    const recipientSocketId = [...onlineUsers.entries()]
-      .find(([, uid]) => uid === withUserId)?.[0];
-    if (recipientSocketId) {
-      io.to(recipientSocketId).emit("message_deleted", { messageId, withUserId });
+      const updated = { id: messageId, ...doc.data(), text: newText.trim(), edited: true };
+
+      socket.emit("message_edited", updated);
+
+      const recipientEntry = [...onlineUsers.entries()]
+        .find(([, u]) => u.userId === withUserId);
+      if (recipientEntry) {
+        io.to(recipientEntry[0]).emit("message_edited", updated);
+      }
+    } catch (err) {
+      console.error("Edit message error:", err);
     }
   });
 
-  // TYPING INDICATOR
+  // Delete a message from Firestore
+  socket.on("delete_message", async ({ messageId, withUserId }) => {
+    try {
+      const ref = db.collection("messages").doc(messageId);
+      const doc = await ref.get();
+
+      if (!doc.exists || doc.data().fromUserId !== socket.userId) return;
+
+      await ref.delete();
+
+      socket.emit("message_deleted", { messageId, withUserId });
+
+      const recipientEntry = [...onlineUsers.entries()]
+        .find(([, u]) => u.userId === withUserId);
+      if (recipientEntry) {
+        io.to(recipientEntry[0]).emit("message_deleted", { messageId, withUserId });
+      }
+    } catch (err) {
+      console.error("Delete message error:", err);
+    }
+  });
+
+  // Typing indicator
   socket.on("typing", ({ toUserId, isTyping }) => {
-    const recipientSocketId = [...onlineUsers.entries()]
-      .find(([, uid]) => uid === toUserId)?.[0];
-    if (recipientSocketId) {
-      io.to(recipientSocketId).emit("user_typing", {
+    const recipientEntry = [...onlineUsers.entries()]
+      .find(([, u]) => u.userId === toUserId);
+    if (recipientEntry) {
+      io.to(recipientEntry[0]).emit("user_typing", {
         fromUserId: socket.userId,
         isTyping
       });
     }
   });
 
-  // DISCONNECT
+  // Disconnect
   socket.on("disconnect", () => {
-    const userId = onlineUsers.get(socket.id);
+    const user = onlineUsers.get(socket.id);
     onlineUsers.delete(socket.id);
 
-    if (userId) {
-      // Check if user has other open tabs
-      const stillOnline = [...onlineUsers.values()].includes(userId);
+    if (user) {
+      const stillOnline = [...onlineUsers.values()].some(u => u.userId === user.userId);
       if (!stillOnline) {
-        io.emit("user_status_changed", { userId, online: false });
-        console.log(` ${socket.username || userId} went offline`);
+        io.emit("user_status_changed", { userId: user.userId, online: false });
+        console.log(`👋 ${user.username} went offline`);
       }
     }
   });
 });
 
+// ─────────────────────────────────────────────
+// START SERVER
+// ─────────────────────────────────────────────
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
-  console.log(`\n ChitChat server running at http://localhost:${PORT}`);
-  console.log(`📁 Serving static files from /public\n`);
+  console.log(`\n🚀 ChitChat running at http://localhost:${PORT}\n`);
 });

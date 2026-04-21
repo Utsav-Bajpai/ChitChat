@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>ChitChat — Login</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link href="https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="auth.css" />
 </head>
 <body>
@@ -19,7 +19,6 @@
   <div class="auth-wrapper">
     <div class="auth-card">
 
-      <!-- Logo -->
       <div class="auth-logo">
         <div class="logo-icon">✦</div>
         <span class="logo-text">ChitChat</span>
@@ -28,18 +27,16 @@
       <h1 class="auth-title">Welcome back</h1>
       <p class="auth-sub">Sign in to continue your conversations</p>
 
-      <!-- Error Banner -->
       <div class="error-banner" id="errorBanner" style="display:none"></div>
 
-      <!-- Form -->
       <div class="auth-form">
         <div class="field-group">
-          <label class="field-label">Email or Phone</label>
+          <label class="field-label">Email</label>
           <input
-            type="text"
+            type="email"
             id="credential"
             class="field-input"
-            placeholder="you@example.com or +91..."
+            placeholder="you@example.com"
             autocomplete="username"
           />
         </div>
@@ -69,16 +66,46 @@
     </div>
   </div>
 
+  <!--
+    ════════════════════════════════════════════
+    STEP 1: Paste your Firebase config below.
+    Get it from: Firebase Console → Project Settings → Your apps → SDK setup
+    ════════════════════════════════════════════
+  -->
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+    import { getAuth, signInWithEmailAndPassword } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
+
+    // ▼▼▼ PASTE YOUR CONFIG HERE ▼▼▼
+    const firebaseConfig = {
+      apiKey: "AIzaSyC59UtIeur89yITq_rwRnpzDsc8zGxbwfk",
+      authDomain: "chitchat-c69dc.firebaseapp.com",
+      projectId: "chitchat-c69dc",
+      storageBucket: "chitchat-c69dc.firebasestorage.app",
+      messagingSenderId: "52214505917",
+      appId: "1:52214505917:web:cce594b8d96209abb332d4"
+    };
+      // ▲▲▲ PASTE YOUR CONFIG HERE ▲▲▲
+
+    const firebaseApp = initializeApp(firebaseConfig);
+    const auth = getAuth(firebaseApp);
+
+    // Expose to the non-module script below
+    window.__auth = auth;
+    window.__signIn = signInWithEmailAndPassword;
+    window.__firebaseReady = true;
+  </script>
+
   <script>
     // Redirect if already logged in
-    const session = JSON.parse(localStorage.getItem("chitchat_session") || "null");
-    if (session) window.location.href = "index.html";
+    if (localStorage.getItem("chitchat_session")) {
+      window.location.href = "index.html";
+    }
 
-    const loginBtn = document.getElementById("loginBtn");
+    const loginBtn    = document.getElementById("loginBtn");
     const errorBanner = document.getElementById("errorBanner");
-    const togglePw = document.getElementById("togglePw");
+    const togglePw    = document.getElementById("togglePw");
 
-    // Toggle password visibility
     togglePw.addEventListener("click", () => {
       const pw = document.getElementById("password");
       pw.type = pw.type === "password" ? "text" : "password";
@@ -88,8 +115,9 @@
     function showError(msg) {
       errorBanner.textContent = msg;
       errorBanner.style.display = "block";
+      errorBanner.classList.remove("shake");
+      void errorBanner.offsetWidth; // reflow to restart animation
       errorBanner.classList.add("shake");
-      setTimeout(() => errorBanner.classList.remove("shake"), 500);
     }
 
     function setLoading(loading) {
@@ -99,41 +127,61 @@
     }
 
     async function handleLogin() {
-      const credential = document.getElementById("credential").value.trim();
+      const email    = document.getElementById("credential").value.trim();
       const password = document.getElementById("password").value;
 
       errorBanner.style.display = "none";
-      if (!credential || !password) return showError("Please fill in all fields.");
+      if (!email || !password) return showError("Please fill in all fields.");
+
+      // Wait for Firebase module to initialise
+      if (!window.__firebaseReady) {
+        return showError("Still loading, please try again in a moment.");
+      }
 
       setLoading(true);
-
       try {
-        const res = await fetch("/api/login", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ credential, password })
+        // 1. Sign in with Firebase Auth
+        const { user } = await window.__signIn(window.__auth, email, password);
+
+        // 2. Get a fresh ID token
+        const token = await user.getIdToken();
+
+        // 3. Fetch this user's profile from Firestore (via your server)
+        const profileRes = await fetch("/api/users", {
+          headers: { Authorization: `Bearer ${token}` }
         });
 
-        const data = await res.json();
+        if (!profileRes.ok) throw new Error("Could not load profile.");
 
-        if (!res.ok) {
-          showError(data.error || "Login failed.");
-        } else {
-          localStorage.setItem("chitchat_session", JSON.stringify({
-            token: data.token,
-            user: data.user
-          }));
-          window.location.href = "index.html";
-        }
+        // 4. Save session to localStorage
+        const avatar = (user.displayName || email).slice(0, 2).toUpperCase();
+        localStorage.setItem("chitchat_session", JSON.stringify({
+          token,
+          user: {
+            id: user.uid,
+            username: user.displayName || email.split("@")[0],
+            avatar
+          }
+        }));
+
+        window.location.href = "index.html";
+
       } catch (err) {
-        showError("Server error. Is the server running?");
+        // Map Firebase error codes to friendly messages
+        const msg = {
+          "auth/user-not-found":   "No account found with this email.",
+          "auth/wrong-password":   "Incorrect password.",
+          "auth/invalid-email":    "Please enter a valid email address.",
+          "auth/too-many-requests":"Too many attempts. Try again later.",
+          "auth/invalid-credential": "Invalid email or password."
+        }[err.code] || err.message || "Login failed.";
+        showError(msg);
       } finally {
         setLoading(false);
       }
     }
 
     loginBtn.addEventListener("click", handleLogin);
-
     document.addEventListener("keydown", (e) => {
       if (e.key === "Enter") handleLogin();
     });

@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>ChitChat — Register</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link href="https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="auth.css" />
 </head>
 <body>
@@ -19,7 +19,6 @@
   <div class="auth-wrapper">
     <div class="auth-card">
 
-      <!-- Logo -->
       <div class="auth-logo">
         <div class="logo-icon">✦</div>
         <span class="logo-text">ChitChat</span>
@@ -28,11 +27,9 @@
       <h1 class="auth-title">Create account</h1>
       <p class="auth-sub">Join ChitChat and start messaging</p>
 
-      <!-- Error / Success Banner -->
-      <div class="error-banner" id="errorBanner" style="display:none"></div>
+      <div class="error-banner"   id="errorBanner"   style="display:none"></div>
       <div class="success-banner" id="successBanner" style="display:none"></div>
 
-      <!-- Form -->
       <div class="auth-form">
 
         <div class="field-group">
@@ -40,17 +37,10 @@
           <input type="text" id="username" class="field-input" placeholder="How should people call you?" autocomplete="off"/>
         </div>
 
-        <div class="field-row">
-          <div class="field-group">
-            <label class="field-label">Email</label>
-            <input type="email" id="email" class="field-input" placeholder="you@example.com"/>
-          </div>
-          <div class="field-group">
-            <label class="field-label">Phone</label>
-            <input type="tel" id="phone" class="field-input" placeholder="+91 98765..."/>
-          </div>
+        <div class="field-group">
+          <label class="field-label">Email <span class="required">*</span></label>
+          <input type="email" id="email" class="field-input" placeholder="you@example.com"/>
         </div>
-        <p class="field-note">Provide at least one: email or phone</p>
 
         <div class="field-group">
           <label class="field-label">Password <span class="required">*</span></label>
@@ -72,29 +62,63 @@
     </div>
   </div>
 
+  <!--
+    ════════════════════════════════════════════
+    STEP 1: Paste your Firebase config below.
+    Get it from: Firebase Console → Project Settings → Your apps → SDK setup
+    ════════════════════════════════════════════
+  -->
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+    import { getAuth, createUserWithEmailAndPassword } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
+
+    // ▼▼▼ PASTE YOUR CONFIG HERE ▼▼▼
+    const firebaseConfig = {
+      apiKey: "AIzaSyC59UtIeur89yITq_rwRnpzDsc8zGxbwfk",
+      authDomain: "chitchat-c69dc.firebaseapp.com",
+      projectId: "chitchat-c69dc",
+      storageBucket: "chitchat-c69dc.firebasestorage.app",
+      messagingSenderId: "52214505917",
+      appId: "1:52214505917:web:cce594b8d96209abb332d4"
+    };
+    // ▲▲▲ PASTE YOUR CONFIG HERE ▲▲▲
+
+    const firebaseApp = initializeApp(firebaseConfig);
+    const auth = getAuth(firebaseApp);
+
+    // Expose to the non-module script below
+    window.__auth = auth;
+    window.__createUser = createUserWithEmailAndPassword;
+    window.__firebaseReady = true;
+  </script>
+
   <script>
-    const session = JSON.parse(localStorage.getItem("chitchat_session") || "null");
-    if (session) window.location.href = "index.html";
+    // Redirect if already logged in
+    if (localStorage.getItem("chitchat_session")) {
+      window.location.href = "index.html";
+    }
 
-    const registerBtn = document.getElementById("registerBtn");
-    const errorBanner = document.getElementById("errorBanner");
+    const registerBtn   = document.getElementById("registerBtn");
+    const errorBanner   = document.getElementById("errorBanner");
     const successBanner = document.getElementById("successBanner");
-    const togglePw = document.getElementById("togglePw");
-    const pwInput = document.getElementById("password");
-    const pwStrength = document.getElementById("pwStrength");
+    const togglePw      = document.getElementById("togglePw");
+    const pwInput       = document.getElementById("password");
+    const pwStrength    = document.getElementById("pwStrength");
 
+    // Toggle password visibility
     togglePw.addEventListener("click", () => {
       pwInput.type = pwInput.type === "password" ? "text" : "password";
       togglePw.textContent = pwInput.type === "password" ? "👁" : "🙈";
     });
 
+    // Password strength meter
     pwInput.addEventListener("input", () => {
       const val = pwInput.value;
       let strength = 0;
-      if (val.length >= 6) strength++;
-      if (/[A-Z]/.test(val)) strength++;
-      if (/[0-9]/.test(val)) strength++;
-      if (/[^A-Za-z0-9]/.test(val)) strength++;
+      if (val.length >= 6)           strength++;
+      if (/[A-Z]/.test(val))         strength++;
+      if (/[0-9]/.test(val))         strength++;
+      if (/[^A-Za-z0-9]/.test(val))  strength++;
 
       const labels = ["", "Weak", "Fair", "Good", "Strong"];
       const colors = ["", "#e74c3c", "#f39c12", "#3498db", "#2ecc71"];
@@ -106,8 +130,9 @@
       successBanner.style.display = "none";
       errorBanner.textContent = msg;
       errorBanner.style.display = "block";
+      errorBanner.classList.remove("shake");
+      void errorBanner.offsetWidth;
       errorBanner.classList.add("shake");
-      setTimeout(() => errorBanner.classList.remove("shake"), 500);
     }
 
     function showSuccess(msg) {
@@ -124,35 +149,54 @@
 
     async function handleRegister() {
       const username = document.getElementById("username").value.trim();
-      const email = document.getElementById("email").value.trim();
-      const phone = document.getElementById("phone").value.trim();
+      const email    = document.getElementById("email").value.trim();
       const password = document.getElementById("password").value;
 
       errorBanner.style.display = "none";
 
-      if (!username) return showError("Username is required.");
-      if (!email && !phone) return showError("Please provide email or phone.");
+      // Client-side validation
+      if (!username)          return showError("Username is required.");
+      if (!email)             return showError("Email is required.");
       if (password.length < 6) return showError("Password must be at least 6 characters.");
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return showError("Invalid email format.");
+
+      if (!window.__firebaseReady) {
+        return showError("Still loading, please try again in a moment.");
+      }
 
       setLoading(true);
-
       try {
-        const res = await fetch("/api/register", {
+        // 1. Create user in Firebase Auth
+        const { user } = await window.__createUser(window.__auth, email, password);
+
+        // 2. Get ID token
+        const token = await user.getIdToken();
+
+        // 3. Save username + avatar to Firestore via your server
+        const saveRes = await fetch("/api/user/save", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ username, email, phone, password })
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`
+          },
+          body: JSON.stringify({ username })
         });
 
-        const data = await res.json();
-
-        if (!res.ok) {
-          showError(data.error || "Registration failed.");
-        } else {
-          showSuccess("Account created! Redirecting to login...");
-          setTimeout(() => window.location.href = "login.html", 1500);
+        if (!saveRes.ok) {
+          const data = await saveRes.json();
+          throw new Error(data.error || "Could not save profile.");
         }
+
+        showSuccess("Account created! Redirecting to login...");
+        setTimeout(() => window.location.href = "login.html", 1500);
+
       } catch (err) {
-        showError("Server error. Is the server running?");
+        const msg = {
+          "auth/email-already-in-use": "An account with this email already exists.",
+          "auth/invalid-email":        "Please enter a valid email address.",
+          "auth/weak-password":        "Password must be at least 6 characters."
+        }[err.code] || err.message || "Registration failed.";
+        showError(msg);
       } finally {
         setLoading(false);
       }

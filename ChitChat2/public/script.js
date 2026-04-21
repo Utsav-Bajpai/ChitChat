@@ -4,11 +4,10 @@
  */
 
 // ─────────────────────────────────────────────
-// AUTH GUARD — Redirect to login if not logged in
+// AUTH GUARD
 // ─────────────────────────────────────────────
 const session = JSON.parse(localStorage.getItem("chitchat_session") || "null");
-
-if (!session || !session.user) {
+if (!session || !session.user || !session.token) {
   window.location.href = "login.html";
   throw new Error("Not authenticated");
 }
@@ -18,184 +17,184 @@ const ME = session.user; // { id, username, avatar }
 // ─────────────────────────────────────────────
 // STATE
 // ─────────────────────────────────────────────
-let currentChatUserId = null;    // Who we're chatting with
+let currentChatUserId = null;
 let currentChatName   = "";
-let allUsers          = [];       // Full user list from server
-let unreadCounts      = {};       // { userId: count }
+let allUsers          = [];
+let unreadCounts      = {};
 let typingTimer       = null;
-let contextTarget     = null;     // { messageId, isEditing }
+let isTyping          = false;
+let contextTarget     = null;
 
-// Conversation cache: { userId: [messages] }
-const convCache = {};
+const convCache = {}; // { userId: [messages] }
 
 // ─────────────────────────────────────────────
 // DOM REFS
 // ─────────────────────────────────────────────
-const userListEl       = document.getElementById("userList");
-const messagesArea     = document.getElementById("messagesArea");
-const msgInput         = document.getElementById("msgInput");
-const sendBtn          = document.getElementById("sendBtn");
-const chatView         = document.getElementById("chatView");
-const welcomeScreen    = document.getElementById("welcomeScreen");
-const chatName         = document.getElementById("chatName");
-const chatAvatar       = document.getElementById("chatAvatar");
-const chatStatus       = document.getElementById("chatStatus");
-const typingIndicator  = document.getElementById("typingIndicator");
-const typingName       = document.getElementById("typingName");
-const messagesLoader   = document.getElementById("messagesLoader");
-const contextMenu      = document.getElementById("contextMenu");
-const searchInput      = document.getElementById("searchInput");
-const myAvatar         = document.getElementById("myAvatar");
-const myUsernameEl     = document.getElementById("myUsername");
-const sidebar          = document.getElementById("sidebar");
-const overlay          = document.getElementById("overlay");
-const fabMenu          = document.getElementById("fabMenu");
+const userListEl      = document.getElementById("userList");
+const messagesArea    = document.getElementById("messagesArea");
+const msgInput        = document.getElementById("msgInput");
+const sendBtn         = document.getElementById("sendBtn");
+const chatView        = document.getElementById("chatView");
+const welcomeScreen   = document.getElementById("welcomeScreen");
+const chatName        = document.getElementById("chatName");
+const chatAvatar      = document.getElementById("chatAvatar");
+const chatStatus      = document.getElementById("chatStatus");
+const typingIndicator = document.getElementById("typingIndicator");
+const typingName      = document.getElementById("typingName");
+const messagesLoader  = document.getElementById("messagesLoader");
+const contextMenu     = document.getElementById("contextMenu");
+const searchInput     = document.getElementById("searchInput");
+const myAvatar        = document.getElementById("myAvatar");
+const myUsernameEl    = document.getElementById("myUsername");
+const sidebar         = document.getElementById("sidebar");
+const overlay         = document.getElementById("overlay");
+const fabMenu         = document.getElementById("fabMenu");
 
 // ─────────────────────────────────────────────
 // INIT UI
 // ─────────────────────────────────────────────
 myAvatar.textContent = ME.avatar;
 myUsernameEl.textContent = ME.username;
-document.getElementById("welcomeHint").textContent = `Signed in as ${ME.username}`;
+
+const welcomeHint = document.getElementById("welcomeHint");
+if (welcomeHint) welcomeHint.textContent = `Signed in as ${ME.username}`;
 
 // ─────────────────────────────────────────────
-// SOCKET.IO CONNECTION
+// SOCKET.IO
 // ─────────────────────────────────────────────
 const socket = io();
 
 socket.on("connect", () => {
   console.log("✅ Socket connected:", socket.id);
-  socket.emit("user_join", { userId: ME.id, username: ME.username });
+  // Pass Firebase token so server can verify identity
+  socket.emit("user_join", {
+    userId:   ME.id,
+    username: ME.username,
+    token:    session.token
+  });
+
+  // Load user list from server (Firestore)
+  loadUsers();
 });
 
 socket.on("disconnect", () => {
-  console.log("❌ Socket disconnected");
+  console.warn("❌ Socket disconnected");
 });
+
+// ─────────────────────────────────────────────
+// LOAD USERS FROM SERVER (REST, not socket)
+// ─────────────────────────────────────────────
+async function loadUsers() {
+  try {
+    const res = await fetch("/api/users", {
+      headers: { Authorization: `Bearer ${session.token}` }
+    });
+    if (!res.ok) {
+      if (res.status === 401) {
+        // Token expired — send back to login
+        localStorage.removeItem("chitchat_session");
+        window.location.href = "login.html";
+        return;
+      }
+      throw new Error("Failed to load users");
+    }
+    const users = await res.json();
+    allUsers = users;
+    renderUserList(users);
+  } catch (err) {
+    console.error("loadUsers error:", err);
+  }
+}
 
 // ─────────────────────────────────────────────
 // SOCKET EVENTS — USERS
 // ─────────────────────────────────────────────
 
-/** Receive full user list on join */
-socket.on("users_list", (users) => {
-  allUsers = users;
-  renderUserList(users);
-});
-
-/** A user came online or went offline */
 socket.on("user_status_changed", ({ userId, online }) => {
-  const idx = allUsers.findIndex(u => u.id === userId);
-  if (idx !== -1) {
-    allUsers[idx].online = online;
-  } else if (online) {
-    // New user — we may not have them yet; re-request would be ideal
-    // For now just mark them for render if found
-  }
-
+  const u = allUsers.find(u => u.id === userId);
+  if (u) u.online = online;
   renderUserList(allUsers);
-
-  // Update chat header if this is the active chat
-  if (userId === currentChatUserId) {
-    updateChatHeader(userId);
-  }
+  if (userId === currentChatUserId) updateChatHeader(userId);
 });
 
 // ─────────────────────────────────────────────
 // SOCKET EVENTS — MESSAGES
 // ─────────────────────────────────────────────
 
-/** Server echoes our sent message back */
 socket.on("message_sent", (msg) => {
   addToCache(msg.toUserId, msg);
-  if (currentChatUserId === msg.toUserId) {
-    appendMessage(msg);
-  }
+  if (currentChatUserId === msg.toUserId) appendMessage(msg);
 });
 
-/** We receive a new message from someone */
 socket.on("receive_message", (msg) => {
   addToCache(msg.fromUserId, msg);
-
   if (currentChatUserId === msg.fromUserId) {
     appendMessage(msg);
   } else {
-    // Increment unread badge
     unreadCounts[msg.fromUserId] = (unreadCounts[msg.fromUserId] || 0) + 1;
     renderUserList(allUsers);
   }
 });
 
-/** Conversation history loaded */
 socket.on("conversation_history", ({ withUserId, messages }) => {
   convCache[withUserId] = messages;
   messagesLoader.style.display = "none";
   renderConversation(withUserId);
 });
 
-/** A message was edited */
 socket.on("message_edited", (msg) => {
-  // Update cache
-  const convId = getConvPartnerId(msg);
-  if (convCache[convId]) {
-    const idx = convCache[convId].findIndex(m => m.id === msg.id);
-    if (idx !== -1) convCache[convId][idx] = msg;
+  const partnerId = msg.fromUserId === ME.id ? msg.toUserId : msg.fromUserId;
+  if (convCache[partnerId]) {
+    const idx = convCache[partnerId].findIndex(m => m.id === msg.id);
+    if (idx !== -1) convCache[partnerId][idx] = msg;
   }
 
-  // Update DOM if visible
   const el = document.getElementById(`msg-${msg.id}`);
   if (el) {
-    const textEl = el.querySelector(".bubble-text");
+    const textEl   = el.querySelector(".bubble-text");
     const editedEl = el.querySelector(".bubble-edited");
-    if (textEl) textEl.textContent = msg.text;
+    if (textEl)   textEl.textContent = msg.text;
     if (editedEl) editedEl.textContent = "edited";
+    else {
+      // Add edited label if not present
+      const meta = el.querySelector(".bubble-meta");
+      if (meta) {
+        const span = document.createElement("span");
+        span.className = "bubble-edited";
+        span.textContent = "edited";
+        meta.prepend(span);
+      }
+    }
   }
 });
 
-/** A message was deleted */
-socket.on("message_deleted", ({ messageId, withUserId }) => {
-  const convId = withUserId === ME.id
-    ? (currentChatUserId || withUserId)
-    : withUserId;
-
-  // Remove from cache
-  if (convCache[convId]) {
-    convCache[convId] = convCache[convId].filter(m => m.id !== messageId);
+socket.on("message_deleted", ({ messageId }) => {
+  // Remove from all caches
+  for (const key of Object.keys(convCache)) {
+    convCache[key] = convCache[key].filter(m => m.id !== messageId);
   }
 
-  // Remove from DOM
   const el = document.getElementById(`msg-${messageId}`);
   if (el) {
-    el.style.animation = "none";
-    el.style.opacity = "0";
-    el.style.transform = "scale(0.95)";
     el.style.transition = "all 0.2s ease";
+    el.style.opacity    = "0";
+    el.style.transform  = "scale(0.95)";
     setTimeout(() => el.remove(), 200);
   }
 });
 
-/** Typing indicator */
 socket.on("user_typing", ({ fromUserId, isTyping }) => {
   if (fromUserId !== currentChatUserId) return;
-
-  if (isTyping) {
-    typingName.textContent = currentChatName;
-    typingIndicator.style.display = "flex";
-  } else {
-    typingIndicator.style.display = "none";
-  }
+  typingName.textContent = currentChatName;
+  typingIndicator.style.display = isTyping ? "flex" : "none";
 });
 
 // ─────────────────────────────────────────────
 // HELPERS
 // ─────────────────────────────────────────────
 
-function getConvPartnerId(msg) {
-  return msg.fromUserId === ME.id ? msg.toUserId : msg.fromUserId;
-}
-
 function addToCache(partnerId, msg) {
   if (!convCache[partnerId]) convCache[partnerId] = [];
-  // Avoid duplicates
   if (!convCache[partnerId].find(m => m.id === msg.id)) {
     convCache[partnerId].push(msg);
   }
@@ -204,57 +203,60 @@ function addToCache(partnerId, msg) {
 function formatTime(isoString) {
   try {
     return new Date(isoString).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-  } catch {
-    return "";
-  }
+  } catch { return ""; }
 }
 
 function formatDate(isoString) {
   try {
     const d = new Date(isoString);
-    const today = new Date();
+    const today     = new Date();
     const yesterday = new Date(today);
     yesterday.setDate(today.getDate() - 1);
-
-    if (d.toDateString() === today.toDateString()) return "Today";
+    if (d.toDateString() === today.toDateString())     return "Today";
     if (d.toDateString() === yesterday.toDateString()) return "Yesterday";
     return d.toLocaleDateString([], { day: "numeric", month: "long" });
-  } catch {
-    return "";
-  }
+  } catch { return ""; }
+}
+
+function escapeHtml(str) {
+  return String(str)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
 }
 
 // ─────────────────────────────────────────────
-// RENDER — USER LIST
+// RENDER USER LIST
 // ─────────────────────────────────────────────
 
 function renderUserList(users) {
-  const query = searchInput.value.toLowerCase();
+  const query    = searchInput.value.toLowerCase();
   const filtered = users.filter(u => u.username.toLowerCase().includes(query));
 
   if (filtered.length === 0) {
     userListEl.innerHTML = `
       <div class="user-list-empty">
         <div class="empty-icon">👥</div>
-        <p>${query ? "No results found." : "No other users online yet."}</p>
-        ${!query ? '<p class="empty-hint">Open a second tab and register another user!</p>' : ""}
+        <p>${query ? "No results found." : "No other users yet."}</p>
+        ${!query ? '<p class="empty-hint">Register another account in a new tab!</p>' : ""}
       </div>`;
     return;
   }
 
   userListEl.innerHTML = "";
-
   filtered.forEach((user, i) => {
     const item = document.createElement("div");
-    item.className = "user-item" + (user.id === currentChatUserId ? " active" : "");
+    item.className = `user-item${user.id === currentChatUserId ? " active" : ""}`;
     item.style.animationDelay = `${i * 40}ms`;
 
     const dotColor = user.online ? "var(--online)" : "var(--offline)";
-    const unread = unreadCounts[user.id] || 0;
+    const unread   = unreadCounts[user.id] || 0;
 
     item.innerHTML = `
       <div class="user-avatar">
-        ${user.avatar}
+        ${escapeHtml(user.avatar)}
         <span class="user-avatar-dot" style="background:${dotColor}"></span>
       </div>
       <div class="user-meta">
@@ -275,29 +277,21 @@ function renderUserList(users) {
 
 function openChat(user) {
   currentChatUserId = user.id;
-  currentChatName = user.username;
+  currentChatName   = user.username;
 
-  // Clear unread
   unreadCounts[user.id] = 0;
   renderUserList(allUsers);
-
-  // Update header
   updateChatHeader(user.id);
 
-  // Show chat view
   welcomeScreen.style.display = "none";
   chatView.style.display = "flex";
-
-  // Close sidebar on mobile
   closeSidebar();
 
-  // Load messages
   messagesArea.innerHTML = "";
   messagesLoader.style.display = "block";
   messagesArea.appendChild(messagesLoader);
 
   if (convCache[user.id]) {
-    // Use cache
     messagesLoader.style.display = "none";
     renderConversation(user.id);
   } else {
@@ -309,7 +303,7 @@ function openChat(user) {
 
 function updateChatHeader(userId) {
   const user = allUsers.find(u => u.id === userId);
-  chatName.textContent = currentChatName;
+  chatName.textContent   = currentChatName;
   chatAvatar.textContent = user?.avatar || currentChatName.slice(0, 2).toUpperCase();
 
   const online = user?.online ?? false;
@@ -336,9 +330,7 @@ function renderConversation(partnerId) {
   }
 
   let lastDate = null;
-
   msgs.forEach(msg => {
-    // Date divider
     const dateStr = formatDate(msg.time);
     if (dateStr !== lastDate) {
       const divider = document.createElement("div");
@@ -347,15 +339,14 @@ function renderConversation(partnerId) {
       messagesArea.appendChild(divider);
       lastDate = dateStr;
     }
-
-    appendMessage(msg, false); // false = don't scroll yet
+    appendMessage(msg, false);
   });
 
   scrollBottom();
 }
 
 // ─────────────────────────────────────────────
-// APPEND A SINGLE MESSAGE
+// APPEND A MESSAGE
 // ─────────────────────────────────────────────
 
 function appendMessage(msg, doScroll = true) {
@@ -383,7 +374,6 @@ function appendMessage(msg, doScroll = true) {
     </div>
   `;
 
-  // Long press / right-click on mobile
   row.addEventListener("contextmenu", (e) => {
     if (isMine) {
       e.preventDefault();
@@ -392,7 +382,6 @@ function appendMessage(msg, doScroll = true) {
   });
 
   messagesArea.appendChild(row);
-
   if (doScroll) scrollBottom();
 }
 
@@ -408,17 +397,12 @@ function sendMessage() {
   const text = msgInput.value.trim();
   if (!text || !currentChatUserId) return;
 
-  socket.emit("send_message", {
-    toUserId: currentChatUserId,
-    text
-  });
-
+  socket.emit("send_message", { toUserId: currentChatUserId, text });
   msgInput.value = "";
-  clearTyping();
+  clearTypingState();
 }
 
 sendBtn.addEventListener("click", sendMessage);
-
 msgInput.addEventListener("keydown", (e) => {
   if (e.key === "Enter" && !e.shiftKey) {
     e.preventDefault();
@@ -430,21 +414,17 @@ msgInput.addEventListener("keydown", (e) => {
 // TYPING INDICATOR
 // ─────────────────────────────────────────────
 
-let isTyping = false;
-
 msgInput.addEventListener("input", () => {
   if (!currentChatUserId) return;
-
   if (!isTyping) {
     isTyping = true;
     socket.emit("typing", { toUserId: currentChatUserId, isTyping: true });
   }
-
   clearTimeout(typingTimer);
-  typingTimer = setTimeout(clearTyping, 1500);
+  typingTimer = setTimeout(clearTypingState, 1500);
 });
 
-function clearTyping() {
+function clearTypingState() {
   if (isTyping && currentChatUserId) {
     isTyping = false;
     socket.emit("typing", { toUserId: currentChatUserId, isTyping: false });
@@ -452,45 +432,33 @@ function clearTyping() {
 }
 
 // ─────────────────────────────────────────────
-// EDIT MESSAGE
+// EDIT / DELETE
 // ─────────────────────────────────────────────
 
 function startEdit(messageId, withUserId) {
-  const msgEl = document.getElementById(`msg-${messageId}`);
+  const msgEl  = document.getElementById(`msg-${messageId}`);
   const textEl = msgEl?.querySelector(".bubble-text");
   if (!textEl) return;
 
-  const currentText = textEl.textContent;
-  const newText = prompt("Edit your message:", currentText);
+  const newText = prompt("Edit your message:", textEl.textContent);
+  if (!newText || newText.trim() === textEl.textContent) return;
 
-  if (!newText || newText.trim() === currentText) return;
-
-  socket.emit("edit_message", {
-    messageId,
-    newText: newText.trim(),
-    withUserId
-  });
+  socket.emit("edit_message", { messageId, newText: newText.trim(), withUserId });
 }
-
-// ─────────────────────────────────────────────
-// DELETE MESSAGE
-// ─────────────────────────────────────────────
 
 function confirmDelete(messageId, withUserId) {
   if (!confirm("Delete this message?")) return;
-
   socket.emit("delete_message", { messageId, withUserId });
 }
 
 // ─────────────────────────────────────────────
-// CONTEXT MENU (right-click)
+// CONTEXT MENU
 // ─────────────────────────────────────────────
 
 function showContextMenu(x, y, messageId) {
   contextTarget = messageId;
-
-  contextMenu.style.left = `${Math.min(x, window.innerWidth - 160)}px`;
-  contextMenu.style.top  = `${Math.min(y, window.innerHeight - 100)}px`;
+  contextMenu.style.left    = `${Math.min(x, window.innerWidth  - 160)}px`;
+  contextMenu.style.top     = `${Math.min(y, window.innerHeight - 100)}px`;
   contextMenu.style.display = "block";
 }
 
@@ -504,9 +472,7 @@ document.getElementById("ctxDelete").addEventListener("click", () => {
   contextMenu.style.display = "none";
 });
 
-document.addEventListener("click", () => {
-  contextMenu.style.display = "none";
-});
+document.addEventListener("click", () => { contextMenu.style.display = "none"; });
 
 // ─────────────────────────────────────────────
 // LOGOUT
@@ -523,9 +489,7 @@ document.getElementById("logoutBtn").addEventListener("click", () => {
 // SEARCH
 // ─────────────────────────────────────────────
 
-searchInput.addEventListener("input", () => {
-  renderUserList(allUsers);
-});
+searchInput.addEventListener("input", () => renderUserList(allUsers));
 
 // ─────────────────────────────────────────────
 // MOBILE SIDEBAR
@@ -534,24 +498,11 @@ searchInput.addEventListener("input", () => {
 function openSidebar() {
   sidebar.classList.add("open");
   overlay.classList.add("show");
-  fabMenu.classList.add("hidden");
+  if (fabMenu) fabMenu.classList.add("hidden");
 }
 
 function closeSidebar() {
   sidebar.classList.remove("open");
   overlay.classList.remove("show");
-  fabMenu.classList.remove("hidden");
-}
-
-// ─────────────────────────────────────────────
-// SECURITY — Escape HTML to prevent XSS
-// ─────────────────────────────────────────────
-
-function escapeHtml(str) {
-  return String(str)
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#039;");
+  if (fabMenu) fabMenu.classList.remove("hidden");
 }
