@@ -254,5 +254,5 @@ io.on("connection", (socket) => {
 // ─────────────────────────────────────────────
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
-  console.log(`\n🚀 ChitChat running at http://localhost:${PORT}\n`);
+  console.log("Server running on port", PORT);
 });
