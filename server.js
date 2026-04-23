@@ -3,7 +3,7 @@ const http = require("http");
 const { Server } = require("socket.io");
 const admin = require("firebase-admin");
 // const serviceAccount = require("./serviceAccountKey.json"); // ← your downloaded key
-const serviceAccount = JSON.parse(process.env.serviceAccount);
+const serviceAccount = JSON.parse(process.env.FIREBASE_KEY);
 // ── Init Firebase Admin ──
 admin.initializeApp({
   credential: admin.credential.cert(serviceAccount)
