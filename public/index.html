@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>ChitChat</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link href="https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
@@ -81,8 +81,8 @@
             </div>
           </div>
           <div class="header-actions">
-            <button class="icon-btn" title="Voice call">📞</button>
-            <button class="icon-btn" title="Video call">📹</button>
+            <button class="icon-btn" data-disabled="true" title="Voice call" data-tooltip="🔔 Feature coming soon" onclick="return false;">📞</button>
+            <button class="icon-btn" data-disabled="true" title="Video call" data-tooltip="🔔 Feature coming soon" onclick="return false;">📹</button>
           </div>
         </div>
 
@@ -101,7 +101,7 @@
 
         <!-- Input Bar -->
         <div class="input-bar">
-          <button class="icon-btn emoji-btn" title="Emoji">😊</button>
+          <button class="icon-btn emoji-btn" id="emojiBtnMain" title="Insert emoji">😊</button>
           <input
             type="text"
             id="msgInput"
@@ -120,6 +120,15 @@
           <button class="send-btn" id="sendBtn">
             <span>➤</span>
           </button>
+        </div>
+
+        <!-- Emoji Picker -->
+        <div class="emoji-picker" id="emojiPicker" style="display:none">
+          <div class="emoji-picker-header">
+            <div class="emoji-picker-title">Pick an emoji</div>
+            <button class="emoji-picker-close" onclick="closeEmojiPicker()">✕</button>
+          </div>
+          <div class="emoji-picker-grid" id="emojiGrid"></div>
         </div>
 
         <!-- Photo Preview -->

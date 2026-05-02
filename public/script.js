@@ -60,6 +60,14 @@ const photoPreview    = document.getElementById("photoPreview");
 const photoPreviewImg = document.getElementById("photoPreviewImg");
 const photoRemoveBtn  = document.getElementById("photoRemoveBtn");
 
+// ── Emoji Picker Elements ──
+const emojiBtnMain    = document.getElementById("emojiBtnMain");
+const emojiPicker     = document.getElementById("emojiPicker");
+const emojiGrid       = document.getElementById("emojiGrid");
+
+// ── User List Refresh ──
+let userListRefreshInterval = null;
+
 // ─────────────────────────────────────────────
 // INIT UI
 // ─────────────────────────────────────────────
@@ -70,10 +78,56 @@ const welcomeHint = document.getElementById("welcomeHint");
 if (welcomeHint) welcomeHint.textContent = `Signed in as ${ME.username}`;
 
 // ─────────────────────────────────────────────
+// EMOJI PICKER SETUP
+// ─────────────────────────────────────────────
+
+const emojis = ['😀', '😂', '😍', '🥰', '😎', '🤔', '👍', '❤️', '🔥', '✨', '🎉', '😊', 
+                '😢', '😡', '🤦', '🙌', '👏', '🙏', '💪', '🤝', '👋', '✌️', '🎈', '🎁',
+                '🍕', '🍔', '🍟', '🌮', '🍜', '☕', '🍰', '🍪', '🍩', '⚽', '🏀', '🎮',
+                '🎵', '🎤', '🎸', '📱', '💻', '⌚', '🎒', '📚', '✏️', '🌟', '⭐', '💫'];
+
+function initEmojiPicker() {
+  emojiGrid.innerHTML = '';
+  emojis.forEach(emoji => {
+    const btn = document.createElement('button');
+    btn.className = 'emoji-item';
+    btn.textContent = emoji;
+    btn.type = 'button';
+    btn.onclick = () => {
+      msgInput.value += emoji;
+      msgInput.focus();
+      closeEmojiPicker();
+    };
+    emojiGrid.appendChild(btn);
+  });
+}
+
+function closeEmojiPicker() {
+  emojiPicker.style.display = 'none';
+}
+
+emojiBtnMain.addEventListener('click', (e) => {
+  e.stopPropagation();
+  if (emojiPicker.style.display === 'none') {
+    initEmojiPicker();
+    emojiPicker.style.display = 'flex';
+  } else {
+    closeEmojiPicker();
+  }
+});
+
+document.addEventListener('click', (e) => {
+  if (!e.target.closest('.emoji-picker') && !e.target.closest('#emojiBtnMain')) {
+    closeEmojiPicker();
+  }
+});
+
+// ─────────────────────────────────────────────
 // PHOTO UPLOAD HANDLERS
 // ─────────────────────────────────────────────
 
 photoBtn.addEventListener("click", () => {
+  closeEmojiPicker();
   photoInput.click();
 });
 
@@ -166,10 +220,15 @@ socket.on("connect", () => {
 
   // Load user list from server (Firestore)
   loadUsers();
+
+  // ── Continuous user list refresh every 5 seconds ──
+  if (userListRefreshInterval) clearInterval(userListRefreshInterval);
+  userListRefreshInterval = setInterval(loadUsers, 5000);
 });
 
 socket.on("disconnect", () => {
   console.warn("❌ Socket disconnected");
+  if (userListRefreshInterval) clearInterval(userListRefreshInterval);
 });
 
 // ─────────────────────────────────────────────
