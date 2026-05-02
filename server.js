@@ -2,8 +2,24 @@ const express = require("express");
 const http = require("http");
 const { Server } = require("socket.io");
 const admin = require("firebase-admin");
-// const serviceAccount = require("./serviceAccountKey.json"); // ← your downloaded key
-const serviceAccount = JSON.parse(process.env.FIREBASE_KEY);
+
+// ── Load Firebase Credentials ──
+let serviceAccount;
+try {
+  if (process.env.FIREBASE_KEY) {
+    serviceAccount = JSON.parse(process.env.FIREBASE_KEY);
+  } else if (process.env.FIREBASE_KEY_BASE64) {
+    serviceAccount = JSON.parse(Buffer.from(process.env.FIREBASE_KEY_BASE64, 'base64').toString());
+  } else {
+    // Fallback to local file (for local development only)
+    serviceAccount = require("./serviceAccountKey.json");
+  }
+} catch (err) {
+  console.error("❌ Failed to load Firebase credentials:", err.message);
+  console.error("Make sure FIREBASE_KEY environment variable is set on Railway");
+  process.exit(1);
+}
+
 // ── Init Firebase Admin ──
 admin.initializeApp({
   credential: admin.credential.cert(serviceAccount)
@@ -12,7 +28,12 @@ admin.initializeApp({
 const db = admin.firestore();
 const app = express();
 const server = http.createServer(app);
-const io = new Server(server, { cors: { origin: "*" } });
+const io = new Server(server, { 
+  cors: { 
+    origin: process.env.CLIENT_URL || "*",
+    methods: ["GET", "POST"]
+  } 
+});
 
 app.use(express.json());
 app.use(express.static("public"));
@@ -26,6 +47,28 @@ const onlineUsers = new Map(); // socketId → { userId, username }
 
 function getConversationId(userA, userB) {
   return [userA, userB].sort().join("_");
+}
+
+// ── Photo Validation & Compression ──
+async function validateAndCompressPhoto(photoData) {
+  try {
+    // Remove data URL prefix if present
+    const base64 = photoData.includes(',') ? photoData.split(',')[1] : photoData;
+    
+    // Check size (max 2MB for stored photo)
+    const buffer = Buffer.from(base64, 'base64');
+    const MAX_STORED_SIZE = 2 * 1024 * 1024;
+    
+    if (buffer.length > MAX_STORED_SIZE) {
+      throw new Error('Photo is too large (max 2MB)');
+    }
+
+    // Return validated base64 photo
+    return `data:image/jpeg;base64,${base64}`;
+  } catch (err) {
+    console.error('Photo validation error:', err);
+    return null;
+  }
 }
 
 // Middleware: verify Firebase ID token on REST calls
@@ -138,7 +181,7 @@ io.on("connection", (socket) => {
   });
 
   // Send a private message → save to Firestore
-  socket.on("send_message", async ({ toUserId, text }) => {
+  socket.on("send_message", async ({ toUserId, text, photoData }) => {
     if (!text || !text.trim()) return;
 
     const convId = getConversationId(socket.userId, toUserId);
@@ -151,6 +194,20 @@ io.on("connection", (socket) => {
       time: new Date().toISOString(),
       edited: false
     };
+
+    // ── Handle Photo Upload ──
+    if (photoData) {
+      try {
+        const validPhoto = await validateAndCompressPhoto(photoData);
+        if (validPhoto) {
+          msg.photoData = validPhoto;
+        } else {
+          console.warn("⚠️ Photo validation failed for user:", socket.userId);
+        }
+      } catch (err) {
+        console.error("Photo processing error:", err);
+      }
+    }
 
     try {
       const ref = await db.collection("messages").add(msg);
@@ -186,7 +243,11 @@ io.on("connection", (socket) => {
         editedAt: new Date().toISOString()
       });
 
-      const updated = { id: messageId, ...doc.data(), text: newText.trim(), edited: true };
+      const updatedData = doc.data();
+      updatedData.text = newText.trim();
+      updatedData.edited = true;
+      updatedData.editedAt = new Date().toISOString();
+      const updated = { id: messageId, ...updatedData };
 
       socket.emit("message_edited", updated);
 

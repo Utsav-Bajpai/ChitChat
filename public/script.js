@@ -25,6 +25,9 @@ let typingTimer       = null;
 let isTyping          = false;
 let contextTarget     = null;
 
+// ── Photo Upload State ──
+let currentPhoto      = null; // { file, preview }
+
 const convCache = {}; // { userId: [messages] }
 
 // ─────────────────────────────────────────────
@@ -50,6 +53,13 @@ const sidebar         = document.getElementById("sidebar");
 const overlay         = document.getElementById("overlay");
 const fabMenu         = document.getElementById("fabMenu");
 
+// ── Photo Upload Elements ──
+const photoInput      = document.getElementById("photoInput");
+const photoBtn        = document.getElementById("photoBtn");
+const photoPreview    = document.getElementById("photoPreview");
+const photoPreviewImg = document.getElementById("photoPreviewImg");
+const photoRemoveBtn  = document.getElementById("photoRemoveBtn");
+
 // ─────────────────────────────────────────────
 // INIT UI
 // ─────────────────────────────────────────────
@@ -58,6 +68,87 @@ myUsernameEl.textContent = ME.username;
 
 const welcomeHint = document.getElementById("welcomeHint");
 if (welcomeHint) welcomeHint.textContent = `Signed in as ${ME.username}`;
+
+// ─────────────────────────────────────────────
+// PHOTO UPLOAD HANDLERS
+// ─────────────────────────────────────────────
+
+photoBtn.addEventListener("click", () => {
+  photoInput.click();
+});
+
+photoInput.addEventListener("change", (e) => {
+  const file = e.target.files?.[0];
+  if (!file) return;
+
+  // Validate file size (max 5MB)
+  const MAX_SIZE = 5 * 1024 * 1024;
+  if (file.size > MAX_SIZE) {
+    alert("Photo must be smaller than 5MB");
+    photoInput.value = "";
+    return;
+  }
+
+  // Validate file type
+  const validTypes = ["image/jpeg", "image/png", "image/webp", "image/gif"];
+  if (!validTypes.includes(file.type)) {
+    alert("Only JPG, PNG, WebP, and GIF images are allowed");
+    photoInput.value = "";
+    return;
+  }
+
+  const reader = new FileReader();
+  reader.onload = (event) => {
+    const dataUrl = event.target.result;
+    currentPhoto = { file, preview: dataUrl };
+    photoPreviewImg.src = dataUrl;
+    photoPreview.style.display = "flex";
+    photoBtn.classList.add("active");
+  };
+  reader.readAsDataURL(file);
+});
+
+photoRemoveBtn.addEventListener("click", () => {
+  currentPhoto = null;
+  photoInput.value = "";
+  photoPreview.style.display = "none";
+  photoBtn.classList.remove("active");
+});
+
+// ─────────────────────────────────────────────
+// LIGHTBOX (Image Preview)
+// ─────────────────────────────────────────────
+
+function createLightbox() {
+  const lightbox = document.createElement("div");
+  lightbox.className = "lightbox";
+  lightbox.id = "lightbox";
+  lightbox.innerHTML = `
+    <div class="lightbox-content">
+      <img id="lightboxImage" class="lightbox-image" src="" alt="fullscreen image" />
+      <button class="lightbox-close" onclick="closeLightbox()">✕</button>
+    </div>
+  `;
+  document.body.appendChild(lightbox);
+}
+
+function openLightbox(imageSrc) {
+  let lightbox = document.getElementById("lightbox");
+  if (!lightbox) createLightbox();
+  lightbox = document.getElementById("lightbox");
+  const img = lightbox.querySelector("#lightboxImage");
+  img.src = imageSrc;
+  lightbox.classList.add("active");
+}
+
+function closeLightbox() {
+  const lightbox = document.getElementById("lightbox");
+  if (lightbox) lightbox.classList.remove("active");
+}
+
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape") closeLightbox();
+});
 
 // ─────────────────────────────────────────────
 // SOCKET.IO
@@ -363,9 +454,21 @@ function appendMessage(msg, doScroll = true) {
     </div>
   ` : "";
 
+  // Check if message has a photo
+  const hasPhoto = msg.photoData || msg.photoUrl;
+  const imageHtml = hasPhoto ? `
+    <img 
+      src="${msg.photoData || msg.photoUrl}" 
+      class="bubble-image" 
+      alt="message image"
+      onclick="openLightbox(this.src)"
+    />
+  ` : "";
+
   row.innerHTML = `
     ${actions}
     <div class="bubble ${isMine ? "mine" : "theirs"}">
+      ${imageHtml}
       <span class="bubble-text">${escapeHtml(msg.text)}</span>
       <div class="bubble-meta">
         ${msg.edited ? '<span class="bubble-edited">edited</span>' : ""}
@@ -395,9 +498,27 @@ function scrollBottom() {
 
 function sendMessage() {
   const text = msgInput.value.trim();
-  if (!text || !currentChatUserId) return;
+  const hasPhoto = currentPhoto !== null;
 
-  socket.emit("send_message", { toUserId: currentChatUserId, text });
+  if (!text && !hasPhoto) return;
+  if (!currentChatUserId) return;
+
+  if (hasPhoto) {
+    // Send photo with optional caption
+    socket.emit("send_message", { 
+      toUserId: currentChatUserId, 
+      text: text || "📸 Photo",
+      photoData: currentPhoto.preview
+    });
+    currentPhoto = null;
+    photoInput.value = "";
+    photoPreview.style.display = "none";
+    photoBtn.classList.remove("active");
+  } else {
+    // Send text-only message
+    socket.emit("send_message", { toUserId: currentChatUserId, text });
+  }
+
   msgInput.value = "";
   clearTypingState();
 }

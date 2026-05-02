@@ -7,18 +7,32 @@
 }
 
 :root {
-  --bg: #0a0a0f;
-  --card: #13131a;
+  /* Psychological Color Theory Palette */
+  --bg: #0f1419;
+  --card: #14192a;
   --border: rgba(255,255,255,0.08);
-  --accent: #6c63ff;
-  --accent2: #ff6584;
-  --text: #f0f0f8;
-  --text-muted: rgba(240,240,248,0.45);
+  
+  /* Primary: Teal (Trust & Communication) */
+  --accent: #1dd1a1;
+  --accent-glow: rgba(29,209,161,0.3);
+  
+  /* Secondary: Coral (Friendliness) */
+  --accent2: #ff7675;
+  --accent2-glow: rgba(255,118,117,0.25);
+  
+  /* Tertiary: Purple (Creativity) */
+  --accent3: #9f7aea;
+  
+  /* Highlight: Gold */
+  --gold: #ffc107;
+  
+  --text: #e8eef5;
+  --text-muted: rgba(232,238,245,0.5);
   --input-bg: rgba(255,255,255,0.05);
   --input-border: rgba(255,255,255,0.12);
-  --input-focus: rgba(108,99,255,0.5);
-  --error: #ff5757;
-  --success: #42e695;
+  --input-focus: rgba(29,209,161,0.5);
+  --error: #ff7675;
+  --success: #1dd1a1;
   --radius: 16px;
 }
 
@@ -65,7 +79,7 @@ body {
 
 .blob3 {
   width: 250px; height: 250px;
-  background: #43cbff;
+  background: var(--accent3);
   top: 50%; left: 60%;
   animation-delay: 6s;
 }

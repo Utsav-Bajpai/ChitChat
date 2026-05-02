@@ -3,3 +3,5 @@ node_modules
 serviceAccountKey.json
 .gitignore
 firebase-config.js
+DEPLOYMENT.md
+FEATURES.md

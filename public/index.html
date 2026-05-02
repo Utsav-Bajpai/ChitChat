@@ -109,9 +109,25 @@
             autocomplete="off"
             maxlength="1000"
           />
+          <!-- Photo Upload -->
+          <input 
+            type="file" 
+            id="photoInput" 
+            accept="image/jpeg,image/png,image/webp,image/gif" 
+            style="display:none;"
+          />
+          <button class="icon-btn photo-btn" id="photoBtn" title="Send Photo">📷</button>
           <button class="send-btn" id="sendBtn">
             <span>➤</span>
           </button>
+        </div>
+
+        <!-- Photo Preview -->
+        <div class="photo-preview" id="photoPreview" style="display:none">
+          <div class="photo-preview-container">
+            <img id="photoPreviewImg" src="" alt="photo preview" />
+            <button class="photo-remove-btn" id="photoRemoveBtn">✕</button>
+          </div>
         </div>
 
       </div>
