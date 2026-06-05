@@ -1035,3 +1035,31 @@ html, body {
 @media (max-width: 380px) {
   .chat-header { padding: 10px 12px; }
 }
+
+/* SVG icon buttons — flex alignment */
+.ctx-item {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+
+/* Delete button specific color */
+.msg-action-btn.delete-btn {
+  color: #b94040;
+}
+
+.msg-action-btn.delete-btn:hover {
+  background: #fdf0f0;
+  border-color: rgba(185, 64, 64, 0.2);
+  color: #b94040;
+}
+
+/* Ensure SVGs inside buttons don't capture pointer events */
+.icon-btn svg,
+.msg-action-btn svg,
+.send-btn svg,
+.ctx-item svg {
+  pointer-events: none;
+  display: block;
+  flex-shrink: 0;
+}
