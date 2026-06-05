@@ -251,7 +251,7 @@ html, body {
   flex-shrink: 0;
 }
 
-.online-dot  { background: var(--online); box-shadow: 0 0 6px var(--online); }
+/* .online-dot  { background: var(--online); box-shadow: 0 0 6px var(--online); } */
 .away-dot    { background: var(--away); }
 .offline-dot { background: var(--offline); }
 
@@ -573,7 +573,7 @@ html, body {
 }
 
 .bubble.mine {
-  background: var(--bubble-mine);
+  /* background: var(--bubble-mine); */
   border-bottom-right-radius: 4px;
   color: white;
   box-shadow: 0 4px 16px var(--bubble-mine-glow);
