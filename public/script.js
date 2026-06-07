@@ -51,7 +51,7 @@ const myAvatar        = document.getElementById("myAvatar");
 const myUsernameEl    = document.getElementById("myUsername");
 const sidebar         = document.getElementById("sidebar");
 const overlay         = document.getElementById("overlay");
-const fabMenu         = document.getElementById("fabMenu");
+const fabMenu         = null; // FAB removed — back button handles mobile nav
 
 // ── Photo Upload Elements ──
 const photoInput      = document.getElementById("photoInput");
@@ -401,7 +401,7 @@ function renderUserList(users) {
     item.className = `user-item${user.id === currentChatUserId ? " active" : ""}`;
     item.style.animationDelay = `${i * 40}ms`;
 
-    const dotColor = user.online ? "var(--online)" : "var(--offline)";
+    const dotColor = user.online ? "var(--online-color)" : "var(--offline-color)";
     const unread   = unreadCounts[user.id] || 0;
 
     item.innerHTML = `
@@ -435,6 +435,7 @@ function openChat(user) {
 
   welcomeScreen.style.display = "none";
   chatView.style.display = "flex";
+  openChatMobile();
   closeSidebar();
 
   messagesArea.innerHTML = "";
@@ -458,7 +459,7 @@ function updateChatHeader(userId) {
 
   const online = user?.online ?? false;
   chatStatus.innerHTML = `
-    <span class="status-dot" style="background:${online ? "var(--online)" : "var(--offline)"}"></span>
+    <span class="status-dot" style="background:${online ? "var(--online-color)" : "var(--offline-color)"}></span>
     <span class="status-label">${online ? "Online" : "Offline"}</span>
   `;
 }
@@ -688,14 +689,24 @@ searchInput.addEventListener("input", () => renderUserList(allUsers));
 // MOBILE SIDEBAR
 // ─────────────────────────────────────────────
 
-function openSidebar() {
-  sidebar.classList.add("open");
-  overlay.classList.add("show");
-  if (fabMenu) fabMenu.classList.add("hidden");
-}
 
 function closeSidebar() {
   sidebar.classList.remove("open");
   overlay.classList.remove("show");
-  if (fabMenu) fabMenu.classList.remove("hidden");
+}
+
+function openChatMobile() {
+  if (window.innerWidth <= 768) {
+    sidebar.classList.add("chat-open");
+    document.querySelector(".main-panel").classList.add("chat-open");
+  }
+}
+
+function showSidebar() {
+  sidebar.classList.remove("chat-open");
+  document.querySelector(".main-panel").classList.remove("chat-open");
+  currentChatUserId = null;
+  currentChatName   = "";
+  sidebar.classList.remove("open");
+  overlay.classList.remove("show");
 }
