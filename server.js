@@ -16,7 +16,7 @@ try {
   }
 } catch (err) {
   console.error("❌ Failed to load Firebase credentials:", err.message);
-  console.error("Set FIREBASE_KEY, FIREBASE_KEY_BASE64, or provide serviceAccountKey.json for local development.");
+  console.error("Make sure FIREBASE_KEY environment variable is set on Railway");
   process.exit(1);
 }
 
